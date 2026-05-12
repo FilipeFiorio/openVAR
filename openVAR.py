@@ -3,6 +3,7 @@ import customtkinter
 from PIL import Image
 
 imagem = None
+caminho_arquivo = None
 
 def gerarJanela():
     janela = customtkinter.CTk()
@@ -12,6 +13,7 @@ def gerarJanela():
     janela.geometry('640x480')
 
     def getImagem():
+        global caminho_arquivo
         caminho_arquivo = customtkinter.filedialog.askopenfilename(
             parent=janela,
             title="Escolha uma imagem",
@@ -20,6 +22,12 @@ def gerarJanela():
 
         if not caminho_arquivo:
             return
+        
+        label_caminho = customtkinter.CTkLabel(
+            janela,
+            text_color="white", 
+            text=f"Arquivo selecionado: {caminho_arquivo}")
+        label_caminho.pack(pady=(20, 10))
 
         global imagem
         imagem = cv2.imread(caminho_arquivo)
