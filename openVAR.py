@@ -3,7 +3,6 @@ import customtkinter
 from PIL import Image
 
 imagem = None
-caminho_arquivo = None
 
 def gerarJanela():
     janela = customtkinter.CTk()
@@ -11,9 +10,9 @@ def gerarJanela():
     janela.title('openVAR')
     janela.configure(fg_color='#0057ae')
     janela.geometry('640x480')
+    janela.resizable(False, False)
 
     def getImagem():
-        global caminho_arquivo
         caminho_arquivo = customtkinter.filedialog.askopenfilename(
             parent=janela,
             title="Escolha uma imagem",
@@ -42,7 +41,7 @@ def gerarJanela():
 
         pil_img = Image.fromarray(imagem_rgb)
 
-        max_w, max_h = 600, 400
+        max_w, max_h = 1280, 720
         pil_img.thumbnail((max_w, max_h), Image.LANCZOS)
 
         img_w, img_h = pil_img.size
@@ -56,7 +55,8 @@ def gerarJanela():
         janela2 = customtkinter.CTkToplevel(janela)
 
         janela2.title("Cabine do openVAR")
-        janela2.geometry(f"{max(img_w + 40, 400)}x{img_h + 120}")
+        janela2.geometry(f"{img_w + 40}x{img_h + 120}")
+        janela.resizable(False, False)
 
         label_imagem = customtkinter.CTkLabel(
             janela2,
@@ -67,7 +67,7 @@ def gerarJanela():
         label_imagem.pack(pady=(20, 10))
 
         label_imagem.image = ctk_img
-
+        janela2.update()
         janela2.grab_set()
 
     pil_logo = Image.open('openVAR_logo.png')
