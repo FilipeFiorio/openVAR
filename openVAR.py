@@ -1,6 +1,9 @@
 import cv2
 import customtkinter
 from PIL import Image
+from ultralytics import YOLO
+
+modelo_pose = YOLO('yolov8n-pose.pt')
 
 imagem = None
 
@@ -13,9 +16,10 @@ def gerarJanela():
     janela.resizable(False, False)
 
     def getImagem():
+        global imagem
         caminho_arquivo = customtkinter.filedialog.askopenfilename(
             parent=janela,
-            title="Escolha uma imagem",
+            title="Escolha uma imagem da partida",
             filetypes=[("Image files", "*.jpg *.png *.jpeg")]
         )
 
@@ -25,20 +29,22 @@ def gerarJanela():
         label_caminho = customtkinter.CTkLabel(
             janela,
             text_color="white", 
-            text=f"Arquivo selecionado: {caminho_arquivo}")
-        label_caminho.pack(pady=(20, 10))
+            text=f"Arquivo selecionado: {caminho_arquivo.split('/')[-1]}")
 
-        global imagem
         imagem = cv2.imread(caminho_arquivo)
 
     def verificar():
         global imagem
 
         if imagem is None:
+            print("Nenhuma imagem selecionada!")
             return
 
-        imagem_rgb = cv2.cvtColor(imagem, cv2.COLOR_BGR2RGB)
+        resultados = modelo_pose(imagem)
+        
+        imagem_processada = resultados[0].plot()
 
+        imagem_rgb = cv2.cvtColor(imagem_processada, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(imagem_rgb)
 
         max_w, max_h = 1280, 720
@@ -53,10 +59,9 @@ def gerarJanela():
         )
 
         janela2 = customtkinter.CTkToplevel(janela)
-
-        janela2.title("Cabine do openVAR")
-        janela2.geometry(f"{img_w + 40}x{img_h + 120}")
-        janela.resizable(False, False)
+        janela2.title("Cabine do openVAR - Análise de Campo")
+        janela2.geometry(f"{img_w + 40}x{img_h + 40}")
+        janela2.resizable(False, False)
 
         label_imagem = customtkinter.CTkLabel(
             janela2,
@@ -64,27 +69,28 @@ def gerarJanela():
             text=''
         )
 
-        label_imagem.pack(pady=(20, 10))
+        label_imagem.pack(pady=(20, 20))
 
         label_imagem.image = ctk_img
         janela2.update()
         janela2.grab_set()
 
-    pil_logo = Image.open('openVAR_logo.png')
+    try:
+        pil_logo = Image.open('openVAR_logo.png')
+        ctk_logo = customtkinter.CTkImage(
+            light_image=pil_logo,
+            dark_image=pil_logo,
+            size=(200, 200)
+        )
 
-    ctk_logo = customtkinter.CTkImage(
-        light_image=pil_logo,
-        dark_image=pil_logo,
-        size=(200, 200)
-    )
-
-    label_logo = customtkinter.CTkLabel(
-        janela,
-        image=ctk_logo,
-        text=''
-    )
-
-    label_logo.pack(pady=(80, 20))
+        label_logo = customtkinter.CTkLabel(
+            janela,
+            image=ctk_logo,
+            text=''
+        )
+        label_logo.pack(pady=(40, 20))
+    except FileNotFoundError:
+        print("Aviso: Logo 'openVAR_logo.png' não encontrada na pasta.")
 
     botao_imagem = customtkinter.CTkButton(
         janela,
@@ -98,7 +104,7 @@ def gerarJanela():
         font=('Arial', 22, 'bold')
     )
 
-    botao_imagem.pack(anchor='center', pady=(0, 8))
+    botao_imagem.pack(anchor='center', pady=(10, 8))
 
     botao_verificacao = customtkinter.CTkButton(
         janela,
@@ -116,5 +122,7 @@ def gerarJanela():
 
     janela.mainloop()
 
-
 gerarJanela()
+
+
+
