@@ -7,8 +7,8 @@ import customtkinter
 from PIL import Image, ImageDraw, ImageFont, ImageTk
 from ultralytics import YOLO
 
-# Carrega o modelo YOLOv8 especializado em estimativa de pose humana
-modelo_pose = YOLO("yolov8x-pose.pt")
+# Carrega o modelo YOLO especialista em estimativa de pose humana
+modelo_pose = YOLO("yolo11x-pose.pt")
 
 # Variáveis globais para armazenar as imagens e os dados do fluxo
 imagem_original = None
@@ -21,10 +21,10 @@ time_defensor = set()
 
 
 def parte_mais_avancada_x(kps, bbox, atacando_para_direita=True):
-    """Calcula a coordenada X do ponto mais avançado do corpo do jogador."""
+    """Calcula a coordenada X do tornozelo do jogador para maior precisão."""
     x1, y1, x2, y2 = bbox
-    # Índices dos keypoints: nariz, ombros, quadris, joelhos e tornozelos
-    indices = [0, 5, 6, 11, 12, 13, 14, 15, 16]
+    # Índices dos keypoints: 15 e 16 são os tornozelos (esquerdo e direito)
+    indices = [15, 16]
     xs = []
 
     # Extrai os pontos com confiança de detecção aceitável (> 0.25)
@@ -41,18 +41,15 @@ def parte_mais_avancada_x(kps, bbox, atacando_para_direita=True):
         else:
             return min(xs)  # Menor X se ataca para a esquerda
 
-    # Fallback caso nenhum keypoint tenha confiança alta: usa a borda da Bounding Box
-    if atacando_para_direita:
-        return x2
-    else:
-        return x1
+    # Fallback caso nenhum tornozelo seja detectado com confiança: usa o centro da base da caixa
+    return (x1 + x2) / 2
 
 
 def gerarJanela():
     """Gera e configura a interface da janela principal do openVAR."""
     janela = customtkinter.CTk()
     janela.title("openVAR")
-    janela.geometry("680x560")
+    janela.geometry("700x620")
     janela.configure(fg_color="#0057ae")
     janela.resizable(False, False)
 
@@ -62,6 +59,10 @@ def gerarJanela():
 
     # Variável padrão para armazenar a inclinação da perspectiva (dx/dy)
     dx_per_dy_calib = 0.24
+    c1_x_img = 0.0
+    c1_y_img = 0.0
+    c2_x_img = 0.0
+    c2_y_img = 0.0
 
     def getImagem():
         """Abre a caixa de diálogo para o usuário carregar uma foto do computador."""
@@ -114,9 +115,9 @@ def gerarJanela():
             imagem_blur, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC
         )
 
-        # Executa a inferência de Pose da IA YOLOv8
+        # Executa a inferência de Pose da IA YOLO
         resultados = modelo_pose(
-            imagem_upscale, conf=0.02, iou=0.25, imgsz=1280, verbose=False
+            imagem_upscale, conf=0.02, iou=0.6, imgsz=1280, verbose=False
         )
 
         resultado = resultados[0]
@@ -142,8 +143,8 @@ def gerarJanela():
             largura = x2 - x1
             altura = y2 - y1
 
-            # Ignora caixas excessivamente pequenas (ruídos de detecção)
-            if largura < 25 or altura < 60:
+            # Ignora apenas caixas extremamente pequenas (ruídos de detecção)
+            if largura < 12 or altura < 35:
                 continue
 
             cx = (x1 + x2) // 2
@@ -195,6 +196,7 @@ def gerarJanela():
         escala = min(screen_w / w_orig, area_img_h / h_orig)
         disp_w = int(w_orig * escala)
         disp_h = int(h_orig * escala)
+        escala = disp_w / w_orig
 
         # Redimensiona a imagem com filtro de alta qualidade Lanczos
         pil_base = Image.fromarray(imagem_com_pose).resize(
@@ -217,8 +219,12 @@ def gerarJanela():
         )
         label_instrucao.pack(pady=6)
 
+        # Container dos Botões (Rodapé)
+        frame_botoes = customtkinter.CTkFrame(jm, fg_color="transparent")
+        frame_botoes.pack(side="bottom", fill="x", pady=8)
+
         frame_canvas = tk.Frame(jm, bg="black")
-        frame_canvas.pack(fill="both", expand=True)
+        frame_canvas.pack(side="top", fill="both", expand=True)
 
         # Cria o Canvas do Tkinter para receber desenhos vetoriais dinâmicos
         canvas = tk.Canvas(
@@ -230,12 +236,8 @@ def gerarJanela():
         )
         canvas.place(relx=0.5, rely=0.5, anchor="center")
 
-        def jogador_no_clique(mx, my):
+        def jogador_no_clique(rx, ry):
             """Verifica se a coordenada do clique caiu dentro da caixa de algum jogador."""
-            cx_off = canvas.winfo_x()
-            cy_off = canvas.winfo_y()
-            rx = mx - cx_off
-            ry = my - cy_off
             for det in deteccoes:
                 x1, y1, x2, y2 = det["bbox"]
                 # Converte os limites da caixa para a escala atual do Canvas
@@ -315,14 +317,10 @@ def gerarJanela():
 
         def clique_esquerdo(event):
             """Gerencia calibração (dois primeiros cliques) ou marcação de atacantes."""
-            nonlocal dx_per_dy_calib
+            nonlocal dx_per_dy_calib, c1_x_img, c1_y_img, c2_x_img, c2_y_img
 
-            cx_off = canvas.winfo_x()
-            cy_off = canvas.winfo_y()
-            mx = event.x_root - frame_canvas.winfo_rootx()
-            my = event.y_root - frame_canvas.winfo_rooty()
-            rx = mx - cx_off
-            ry = my - cy_off
+            rx = event.x
+            ry = event.y
 
             # Fase de calibração ativa se houver menos de dois cliques salvos
             if len(pontos_calibracao) < 2:
@@ -343,13 +341,19 @@ def gerarJanela():
                     else:
                         dx_per_dy_calib = 0.0
 
+                    # Converte os pontos da calibração para as coordenadas da imagem com pose (upscaled)
+                    c1_x_img = c1_x / escala
+                    c1_y_img = c1_y / escala
+                    c2_x_img = c2_x / escala
+                    c2_y_img = c2_y / escala
+
                     label_instrucao.configure(
                         text="Calibração Concluída! Clique esquerdo = atacante | clique direito = defensor"
                     )
                 return
 
             # Fase de marcação ativa após calibração concluída
-            did = jogador_no_clique(mx, my)
+            did = jogador_no_clique(rx, ry)
             if did is None:
                 return
             time_atacante.add(did)
@@ -360,10 +364,9 @@ def gerarJanela():
             """Adiciona o jogador clicado ao grupo de defensores."""
             if len(pontos_calibracao) < 2:
                 return  # Bloqueia cliques secundários durante a calibração
-            did = jogador_no_clique(
-                event.x_root - frame_canvas.winfo_rootx(),
-                event.y_root - frame_canvas.winfo_rooty(),
-            )
+            rx = event.x
+            ry = event.y
+            did = jogador_no_clique(rx, ry)
             if did is None:
                 return
             time_defensor.add(did)
@@ -375,7 +378,7 @@ def gerarJanela():
         canvas.bind("<Button-3>", clique_direito)
 
         customtkinter.CTkButton(
-            jm,
+            frame_botoes,
             text="Analisar Impedimento",
             command=lambda: analisar_impedimento(jm),
             width=280,
@@ -384,12 +387,13 @@ def gerarJanela():
             text_color="#0057ae",
             hover_color="#d4f04a",
             font=("Arial", 18, "bold"),
-        ).pack(pady=8)
+        ).pack(anchor="center")
 
         redesenhar()
 
     def analisar_impedimento(janela_marcacao):
         """Calcula o veredito final do VAR e desenha a projeção tridimensional."""
+        nonlocal dx_per_dy_calib, c1_x_img, c1_y_img, c2_x_img, c2_y_img
         if len(time_atacante) == 0 or len(time_defensor) == 0:
             label_status.configure(text="Marque atacantes e defensores.")
             return
@@ -429,25 +433,68 @@ def gerarJanela():
         cor_linha = (255, 0, 0) if impedido else (0, 255, 0)
 
         # Encontra qual defensor específico estabeleceu a linha de impedimento
-        if atacando_para_direita:
-            ultimo_defensor_id = max(
-                time_defensor, key=lambda i: deteccoes[i]["perna_x"]
-            )
-        else:
-            ultimo_defensor_id = min(
-                time_defensor, key=lambda i: deteccoes[i]["perna_x"]
-            )
+        # Encontra qual defensor específico estabeleceu a linha de impedimento
+        defensores_ids_ordenados = sorted(
+            time_defensor,
+            key=lambda i: deteccoes[i]["perna_x"],
+            reverse=atacando_para_direita
+        )
+        ultimo_defensor_id = defensores_ids_ordenados[0]
+        
+        # Se houver dois defensores muito próximos na tela (diferença < 20 pixels),
+        # escolhemos aquele que tiver a menor distância real para a linha de fundo
+        if len(defensores_ids_ordenados) > 1:
+            segundo_def_id = defensores_ids_ordenados[1]
+            p1 = deteccoes[ultimo_defensor_id]["perna_x"]
+            p2 = deteccoes[segundo_def_id]["perna_x"]
+            if abs(p1 - p2) < 20.0:
+                if atacando_para_direita:
+                    if p2 > p1:
+                        ultimo_defensor_id = segundo_def_id
+                else:
+                    if p2 < p1:
+                        ultimo_defensor_id = segundo_def_id
 
         x1, y1, x2, y2 = deteccoes[ultimo_defensor_id]["bbox"]
+        linha_impedimento = deteccoes[ultimo_defensor_id]["perna_x"]
         x_ref = int(linha_impedimento)
         y_ref = int(y2)  # Usa o Y da base (pé) como âncora de projeção
 
-        # Projeção com a Perspectiva Calibrada Manualmente
-        x_topo = int(x_ref - y_ref * dx_per_dy_calib)
-        x_base = int(x_ref + (h - y_ref) * dx_per_dy_calib)
+        # Projeção com a Perspectiva Calibrada Manualmente (Ponto de Fuga Tridimensional)
+        # Altura do horizonte (y_fuga) de forma robusta e estável
+        y_fuga = -h * 1.2
+        
+        # Fator K derivado da projeção de perspectiva
+        K = 1.0 / (y_ref - y_fuga)
+
+        # X da linha de calibração na mesma altura Y do jogador (y_ref)
+        x_calib = c1_x_img + dx_per_dy_calib * (y_ref - c1_y_img)
+
+        # Inclinação dinâmica baseada na variação de perspectiva horizontal real
+        dx_per_dy_dinamico = dx_per_dy_calib + K * (x_ref - x_calib)
+
+        # Projeta os limites na tela usando a nova taxa
+        x_topo = int(x_ref - y_ref * dx_per_dy_dinamico)
+        x_base = int(x_ref + (h - y_ref) * dx_per_dy_dinamico)
+
+        # LOG DE DEPURAÇÃO
+        try:
+            with open("debug_log.txt", "a") as f:
+                f.write(f"h={h}, w={w}\n")
+                f.write(f"c1_x_img={c1_x_img:.2f}, c1_y_img={c1_y_img:.2f}\n")
+                f.write(f"c2_x_img={c2_x_img:.2f}, c2_y_img={c2_y_img:.2f}\n")
+                f.write(f"dx_per_dy_calib={dx_per_dy_calib:.6f}\n")
+                f.write(f"x_ref={x_ref:.2f}, y_ref={y_ref:.2f}\n")
+                f.write(f"y_fuga={y_fuga:.2f}\n")
+                f.write(f"x_calib={x_calib:.2f}\n")
+                f.write(f"dx_per_dy_dinamico={dx_per_dy_dinamico:.6f}\n")
+                f.write(f"x_topo={x_topo}, x_base={x_base}\n")
+                f.write("-" * 40 + "\n")
+        except Exception as e:
+            pass
 
         label_status.configure(
-            text=f"Sucesso: Linha de impedimento desenhada usando calibração manual (dx_per_dy = {dx_per_dy_calib:.4f})."
+            text="Sucesso: Linha de impedimento desenhada."
         )
         draw.line([(x_topo, 0), (x_base, h)], fill=cor_linha, width=6)
 
@@ -553,7 +600,7 @@ def gerarJanela():
     try:
         pil_logo = Image.open("openVAR_logo.png")
         ctk_logo = customtkinter.CTkImage(
-            light_image=pil_logo, dark_image=pil_logo, size=(220, 220)
+            light_image=pil_logo, dark_image=pil_logo, size=(280, 280)
         )
         customtkinter.CTkLabel(janela, image=ctk_logo, text="").pack(
             pady=(25, 10)

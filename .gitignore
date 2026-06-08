@@ -1,2 +1,4 @@
 .vscode
-yolov8x-pose.pt
+yolo11x-pose.pt
+debug_log.txt
+debug_main.txt
