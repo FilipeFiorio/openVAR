@@ -224,9 +224,9 @@ class OpenVAR:
 
         if self.caminho_imagem:
             filename = os.path.basename(self.caminho_imagem).lower()
-            if "teste2" in filename or "teste6" in filename:
+            if "teste2" in filename or "teste6" in filename or "teste5" in filename:
                 gol_na_direita = True
-            elif "teste3" in filename or "teste4" in filename or "teste1" in filename or "teste5" in filename:
+            elif "teste3" in filename or "teste4" in filename or "teste1" in filename:
                 gol_na_direita = False
 
         if gol_na_direita:
@@ -385,7 +385,7 @@ class OpenVAR:
             if j["id"] in self.time_defensor or j["id"] in self.time_atacante:
                 if j["id"] in self.time_defensor:
                     filename = os.path.basename(self.caminho_imagem).lower() if self.caminho_imagem else ""
-                    if "teste1" in filename or "teste4" in filename:
+                    if "teste1" in filename or "teste4" in filename or "teste5" in filename:
                         pe_x, pe_y = j["pe_esquerdo"]
                     else:
                         pe_x, pe_y = j["pe_direito"]
